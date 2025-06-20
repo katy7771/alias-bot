@@ -19,7 +19,7 @@ WEBHOOK_PATH = f"/{TOKEN}"
 bot = telebot.TeleBot(TOKEN)
 app = flask.Flask(__name__)
 
-# (The rest of your global variables and core game logic functions are unchanged)
+# (The rest of the global variables and core functions are unchanged)
 teams: Dict[str, List[int]] = {}
 user_teams: Dict[int, str] = {}
 teams_score: Dict[str, int] = {}
@@ -267,7 +267,7 @@ def start_round_handler(message_or_call: types.Message | types.CallbackQuery):
     if player_team != expected_team and game_active:
         if isinstance(message_or_call, types.CallbackQuery):
             display_expected_team = _get_team_display_name(expected_team)
-            bot.answer_callback_query(message_or_call.id, f"Зараз черга команди '{display_expected_team}', а не вашої.", show_alert=True)
+            bot.answer_callback_query(message_or_call.id, f"За 지금 черга команди '{display_expected_team}', а не вашої.", show_alert=True)
         return
     if not game_active:
         available_words = all_words.copy(); random.shuffle(available_words)
@@ -326,7 +326,7 @@ def handle_setup_new_game(call: types.CallbackQuery):
     if isinstance(call.message, types.Message):
         try: bot.edit_message_text("Починаємо налаштування нової гри...", chat_id=call.message.chat.id, message_id=call.message.message_id)
         except ApiTelegramException: pass
-    setup_command(call.message)
+        setup_command(call.message)
     else: bot.send_message(call.from_user.id, "Помилка: не вдалося запустити налаштування з цього повідомлення. Будь ласка, використайте команду /setup.")
 
 # ===================================================================
@@ -347,7 +347,8 @@ def webhook():
 
 # This block runs once when Gunicorn starts the app.
 # It handles webhook setup for both Replit and other platforms like Render.
-if __name__ != "__main__": # This condition ensures it runs when Gunicorn starts the app
+# The 'if __name__ != "__main__":' condition ensures it runs when Gunicorn starts the Flask app.
+if __name__ != "__main__":
     print("Initializing webhook setup...")
     if not TOKEN:
         print("ERROR: BOT_TOKEN is not set. Cannot set webhook.")
@@ -371,3 +372,4 @@ if __name__ == "__main__":
     print("Running in local mode. Bot will use polling.")
     bot.remove_webhook()
     bot.polling(none_stop=True)
+    
