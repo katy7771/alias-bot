@@ -267,7 +267,7 @@ def start_round_handler(message_or_call: types.Message | types.CallbackQuery):
     if player_team != expected_team and game_active:
         if isinstance(message_or_call, types.CallbackQuery):
             display_expected_team = _get_team_display_name(expected_team)
-            bot.answer_callback_query(message_or_call.id, f"За 지금 черга команди '{display_expected_team}', а не вашої.", show_alert=True)
+            bot.answer_callback_query(message_or_call.id, f"За сейчас черга команди '{display_expected_team}', а не вашої.", show_alert=True)
         return
     if not game_active:
         available_words = all_words.copy(); random.shuffle(available_words)
@@ -312,7 +312,8 @@ def handle_new_circle(call: types.CallbackQuery):
     next_team = teams_order[current_turn_index]
     display_next_team = _get_team_display_name(next_team)
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("▶️ Почати раунд", callback_data="start_game"))
+    markup.add(types.InlineKeyboardButton("🔄 Нове коло", callback_data="new_circle"), types.InlineKeyboardButton("🏁 Завершити гру", callback_data="finish_game"))
+    bot.send_message(call.message.chat.id, "Круг завершено! Що робимо далі?", reply_markup=markup)
     try: bot.edit_message_text(f"🔄 *Починаємо нове коло!*", chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=None)
     except ApiTelegramException as e: print(f"Could not edit 'new_circle' message: {e}")
     bot.send_message(call.message.chat.id, f"Хід знову переходить до команди *{display_next_team}*! Гравець з цієї команди має натиснути кнопку:", reply_markup=markup)
@@ -339,6 +340,8 @@ def webhook():
     if flask.request.headers.get('content-type') == 'application/json':
         json_string = flask.request.get_data().decode('utf-8')
         update = telebot.types.Update.de_json(json_string)
+        # Adding a print here to confirm receipt of updates in Render logs
+        print(f"Received update from Telegram: {update.update_id}")
         if update:
             bot.process_new_updates([update])
         return '', 200
@@ -372,4 +375,3 @@ if __name__ == "__main__":
     print("Running in local mode. Bot will use polling.")
     bot.remove_webhook()
     bot.polling(none_stop=True)
-    
