@@ -13,14 +13,13 @@ TOKEN = os.environ.get("BOT_TOKEN")
 if not TOKEN:
     raise ValueError("BOT_TOKEN is not set in Secrets")
 
-# CHANGED: We now read the webhook URL from a secret that you will set.
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL") 
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 WEBHOOK_PATH = f"/{TOKEN}"
 
 bot = telebot.TeleBot(TOKEN)
 app = flask.Flask(__name__)
 
-# (The rest of the global variables and core functions are unchanged)
+# (The rest of your global variables and core game logic functions are unchanged)
 teams: Dict[str, List[int]] = {}
 user_teams: Dict[int, str] = {}
 teams_score: Dict[str, int] = {}
@@ -327,7 +326,7 @@ def handle_setup_new_game(call: types.CallbackQuery):
     if isinstance(call.message, types.Message):
         try: bot.edit_message_text("Починаємо налаштування нової гри...", chat_id=call.message.chat.id, message_id=call.message.message_id)
         except ApiTelegramException: pass
-        setup_command(call.message)
+    setup_command(call.message)
     else: bot.send_message(call.from_user.id, "Помилка: не вдалося запустити налаштування з цього повідомлення. Будь ласка, використайте команду /setup.")
 
 # ===================================================================
@@ -346,23 +345,28 @@ def webhook():
     else:
         flask.abort(403)
 
-# This block runs once when Gunicorn starts the app on Replit
-if 'REPL_ID' in os.environ:
-    print("Replit environment detected...")
-    if WEBHOOK_URL:
-        print(f"✅ Public URL found in Secrets: {WEBHOOK_URL}")
-        print("⚙️  Setting webhook...")
-
-        bot.remove_webhook()
-        time.sleep(0.5)
-        bot.set_webhook(url=WEBHOOK_URL + WEBHOOK_PATH)
-
-        print("🚀 Webhook is set successfully! Bot is live.")
+# This block runs once when Gunicorn starts the app.
+# It handles webhook setup for both Replit and other platforms like Render.
+if __name__ != "__main__": # This condition ensures it runs when Gunicorn starts the app
+    print("Initializing webhook setup...")
+    if not TOKEN:
+        print("ERROR: BOT_TOKEN is not set. Cannot set webhook.")
+    elif WEBHOOK_URL:
+        print(f"✅ Public WEBHOOK_URL found: {WEBHOOK_URL}")
+        print("⚙️ Setting webhook...")
+        try:
+            bot.remove_webhook()
+            time.sleep(0.5) # Give some time for webhook to be removed
+            bot.set_webhook(url=WEBHOOK_URL + WEBHOOK_PATH)
+            print("🚀 Webhook is set successfully! Bot is live.")
+        except Exception as e:
+            print(f"❌ Error setting webhook: {e}")
+            print("Please ensure WEBHOOK_URL is correct and accessible from Telegram.")
     else:
-        print("⚠️ Could not find WEBHOOK_URL in Secrets. Webhook was not set.")
-        print("   Please go to the 'Secrets' tab and set the WEBHOOK_URL variable.")
+        print("⚠️ WEBHOOK_URL is not set. Webhook was not set.")
+        print("    Please ensure WEBHOOK_URL environment variable is configured on Render.")
 
-# This part is only for running the Flask server locally.
+# This part is only for running the Flask server locally for development.
 if __name__ == "__main__":
     print("Running in local mode. Bot will use polling.")
     bot.remove_webhook()
