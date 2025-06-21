@@ -64,7 +64,7 @@ def _create_word_buttons() -> types.InlineKeyboardMarkup:
     return markup
 def finish_game(chat_id: Optional[int] = None, silent: bool = False):
     print(f"INFO: Finishing game in chat {chat_id}, silent={silent}.")
-    global game_active, round_in_progress, active_player_id, teams, user_teams, teams_score, teams_order, played_teams, used_words, available_words, player_states, current_turn_id, group_timer_message_id, team_emojis
+    global game_active, round_in_progress, active_player_id, teams, user_teams, teams_score, teams_order, played_teams, used_words, available_words, player_states, current_turn_index, group_timer_message_id, team_emojis
     target_chat_id = chat_id or current_chat_id
     if active_player_id and active_player_id in player_states:
         player_states[active_player_id]["timer_active"] = False
@@ -294,7 +294,7 @@ def start(message: types.Message):
             bot.send_message(message.chat.id, "Доброго дня! 👋\n\nЩоб почати грати, адміністратор чату має спершу налаштувати команди за допомогою команди /setup"); return
         except ApiTelegramException as e:
             print(f"ERROR: Could not send 'no teams' message to {message.chat.id}: {e}")
-    rules = ("👋 *Вітаємо в Alias! Гра налаштована, можна починати.*\n\n" "📌 *Правила гри:*\n" "1. Усі гравці мають приєднатись до своїх команд, натиснувши на кнопку нижче.\n" "2. Бот автоматично визначить, яка команда ходить першою.\n" "3. Коли настане черга вашої команди, один гравець має натиснути 'Почати гру' або 'Почати раунд'.\n" "4. **Тільки гравець з команди, чия черга, може почати раунд.**\n" f"5. У вас є {ROUND_TIME} секунд або {ROUND_LIMIT} слів, щоб пояснити якомога більше.\n" "6. Вгадане слово — це +1 бал для вашої команди.\n\n" "🏆 *Приз для переможців: кожен гравець команди-переможця отримає +30 хв до перерви!*")
+    rules = ("👋 *Вітаємо в Alias! Гра налаштована, можна починати.*\n\n" "📌 *Правила гри:*\n" "1. Усі гравці мають приєднатись до своїх команд, натиснувши на кнопку нижче.\n" "2. Бот автоматично визначить, яка команда ходить першою.\n" "3. Коли настане черга вашої команди, один гравець має натиснути 'Почати гру' або 'Почати раунд'.\n" "4. **Тільки гравець з команди, чия черга, може почати раунд.**\n" f"5. У вас є {ROUND_TIME} секунд або {ROUND_LIMIT} слів, щоб пояснити якомога більше.\n" "6. Вгадане слово — это +1 бал для вашей команды.\n\n" "🏆 *Приз для переможців: кожен гравець команди-переможця отримає +30 хв до перерви!*")
     try:
         bot.send_message(current_chat_id, rules, parse_mode="Markdown")
     except ApiTelegramException as e:
@@ -361,7 +361,7 @@ def start_round_handler(message_or_call: types.Message | types.CallbackQuery):
         return
     if isinstance(message_or_call, types.CallbackQuery): bot.answer_callback_query(message_or_call.id)
     if round_in_progress:
-        if isinstance(message_or_call, types.CallbackQuery): bot.answer_callback_query(message_or_call.id, "⏳ Зачекайте, раунд ще не завершено.", show_alert=True)
+        if isinstance(message_or_call, types.CallbackQuery): bot.answer_callback_query(message_or_call.id, "⏳ Зачекайте, раунд еще не завершен.", show_alert=True)
         print("WARNING: Round already in progress.")
         return
     if not teams:
@@ -435,7 +435,7 @@ def handle_response(call: types.CallbackQuery):
         bot.answer_callback_query(call.id, "✅ +1 бал")
         print(f"INFO: User {uid} got word right. Score: {state['score']}.")
     else:
-        bot.answer_callback_query(call.id, "⏭️ Наступное слово")
+        bot.answer_callback_query(call.id, "⏭️ Следующее слово")
         print(f"INFO: User {uid} skipped or got word wrong.")
 
     if state["word_count"] >= ROUND_LIMIT or not available_words:
@@ -513,10 +513,9 @@ def webhook():
         try:
             update = telebot.types.Update.de_json(json_string)
             print(f"INFO: Received update from Telegram: {update.update_id}")
-            # Instead of directly processing here, we feed it to the bot's internal dispatcher.
-            # The bot will be running in a separate thread.
-            threading.Thread(target=bot.process_new_updates, args=([update],)).start()
-            print(f"INFO: Update {update.update_id} handed off to bot's internal processing thread.")
+            # Ensure the bot's dispatcher processes this update
+            bot.process_new_updates([update])
+            print(f"INFO: Successfully processed update {update.update_id} and passed to handlers.")
             return '', 200
         except Exception as e:
             print(f"CRITICAL ERROR: Failed to parse or process Telegram update: {e}")
@@ -554,13 +553,9 @@ if __name__ != "__main__":
         print("WARNING: WEBHOOK_URL is not set. Webhook was not set.")
         print("    Please ensure WEBHOOK_URL environment variable is configured on Render.")
 
-    # IMPORTANT: Remove the infinity_polling thread.
-    # It conflicts with webhooks and causes the Error 409.
-    # The bot will now solely rely on webhook updates coming to the Flask app,
-    # and the bot.process_new_updates() call within the webhook function handles dispatching.
-    print("INFO: Starting bot's dispatcher for webhook updates...")
-    # No explicit bot.polling or bot.infinity_polling here for webhook mode
-    # The bot instance itself (loaded with handlers) will be used by process_new_updates
+    # In a pure webhook setup, you do NOT run bot.polling() or bot.infinity_polling().
+    # The Flask app receives the webhook updates, and bot.process_new_updates() handles dispatching.
+    print("INFO: Bot operating in webhook mode, relying on Flask to receive updates.")
 
 # This part is only for running the Flask server locally for development.
 if __name__ == "__main__":
