@@ -3,10 +3,10 @@ import os
 import random
 import threading
 import time
+import flask
 from telebot import types
 from telebot.apihelper import ApiTelegramException
 from typing import Dict, List, Set, Optional, Any
-import flask
 
 # --- Bot and Global Variables Initialization ---
 print("INFO: Starting bot initialization...")
@@ -401,7 +401,7 @@ def start_round_handler(message_or_call: types.Message | types.CallbackQuery):
         username = user.username or user.first_name
         if player_team:
             display_player_team = _get_team_display_name(player_team)
-            bot.send_message(current_chat_id, f"Хід гравця @{username} з команди *{display_player_team}*! Повідомлення зі словом відправлено в особисті.", parse_mode="Markdown")
+            bot.send_message(current_chat_id, f"Хід гравця @{username} з команди *{display_team_name}*! Повідомлення зі словом відправлено в особисті.", parse_mode="Markdown")
         else: bot.send_message(current_chat_id, f"Хід гравця @{username}! Повідомлення зі словом відправлено в особисті.", parse_mode="Markdown")
         print(f"INFO: Notified chat about active player @{username}.")
     except Exception as e:
@@ -488,6 +488,15 @@ def handle_setup_new_game(call: types.CallbackQuery):
             bot.send_message(call.from_user.id, "Помилка: не вдалося запустити налаштування з цього повідомлення. Будь ласка, використайте команду /setup.")
         except ApiTelegramException as e:
             print(f"ERROR: Could not send 'setup failed' message to user {call.from_user.id}: {e}")
+
+# This is a generic handler that will catch ALL messages and print them.
+# It helps confirm if messages are being dispatched to *any* handler.
+@bot.message_handler(func=lambda message: True, content_types=['text', 'photo', 'video', 'audio', 'document', 'sticker', 'voice', 'location', 'contact'])
+def echo_all(message: types.Message):
+    print(f"INFO: Generic handler received message from {message.from_user.id} in chat {message.chat.id}. Text: {message.text or 'non-text message'}")
+    # You can temporarily add a simple response here to confirm the handler works
+    # bot.send_message(message.chat.id, f"Echo: {message.text or 'Received non-text message'}")
+
 
 # ===================================================================
 # === 3. Webhook Server & Startup Logic ===
