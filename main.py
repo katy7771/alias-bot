@@ -346,21 +346,19 @@ def webhook():
     else:
         flask.abort(403)
 
-# This block runs once when Gunicorn starts the app on Replit
-if 'REPL_ID' in os.environ:
-    print("Replit environment detected...")
-    if WEBHOOK_URL:
-        print(f"✅ Public URL found in Secrets: {WEBHOOK_URL}")
-        print("⚙️  Setting webhook...")
+# This block runs once when Gunicorn starts the app on Railway
+if WEBHOOK_URL: # Simply check if WEBHOOK_URL is provided
+    print(f"✅ Public URL found in Secrets: {WEBHOOK_URL}")
+    print("⚙️  Setting webhook...")
 
-        bot.remove_webhook()
-        time.sleep(0.5)
-        bot.set_webhook(url=WEBHOOK_URL + WEBHOOK_PATH)
+    bot.remove_webhook()
+    time.sleep(0.5)
+    bot.set_webhook(url=WEBHOOK_URL + WEBHOOK_PATH)
 
-        print("🚀 Webhook is set successfully! Bot is live.")
-    else:
-        print("⚠️ Could not find WEBHOOK_URL in Secrets. Webhook was not set.")
-        print("   Please go to the 'Secrets' tab and set the WEBHOOK_URL variable.")
+    print("🚀 Webhook is set successfully! Bot is live.")
+else:
+    print("⚠️ Could not find WEBHOOK_URL in Secrets. Webhook was not set.")
+    print("   Please set the WEBHOOK_URL environment variable.")
 
 # This part is only for running the Flask server locally.
 if __name__ == "__main__":
