@@ -15,8 +15,10 @@ if not TOKEN:
     print("CRITICAL: BOT_TOKEN is not set in Secrets. Exiting.")
     raise ValueError("BOT_TOKEN is not set in Secrets")
 
+# In webhook mode, WEBHOOK_URL is where Telegram sends updates.
+# In polling mode, WEBHOOK_URL is not strictly needed for operation but can be useful for initial webhook setup removal.
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
-WEBHOOK_PATH = f"/{TOKEN}"
+WEBHOOK_PATH = f"/{TOKEN}" # This path is what Telegram will send updates to.
 
 bot = telebot.TeleBot(TOKEN)
 app = flask.Flask(__name__)
@@ -433,7 +435,7 @@ def handle_response(call: types.CallbackQuery):
         bot.answer_callback_query(call.id, "✅ +1 бал")
         print(f"INFO: User {uid} got word right. Score: {state['score']}.")
     else:
-        bot.answer_callback_query(call.id, "⏭️ Наступне слово")
+        bot.answer_callback_query(call.id, "⏭️ Наступное слово")
         print(f"INFO: User {uid} skipped or got word wrong.")
 
     if state["word_count"] >= ROUND_LIMIT or not available_words:
@@ -511,8 +513,10 @@ def webhook():
         try:
             update = telebot.types.Update.de_json(json_string)
             print(f"INFO: Received update from Telegram: {update.update_id}")
-            bot.process_new_updates([update])
-            print(f"INFO: Successfully processed update {update.update_id} and passed to handlers.")
+            # Instead of directly processing here, we feed it to the bot's internal dispatcher.
+            # The bot will be running in a separate thread.
+            threading.Thread(target=bot.process_new_updates, args=([update],)).start()
+            print(f"INFO: Update {update.update_id} handed off to bot's internal processing thread.")
             return '', 200
         except Exception as e:
             print(f"CRITICAL ERROR: Failed to parse or process Telegram update: {e}")
@@ -547,9 +551,15 @@ if __name__ != "__main__":
         print("WARNING: WEBHOOK_URL is not set. Webhook was not set.")
         print("    Please ensure WEBHOOK_URL environment variable is configured on Render.")
 
+    # Start the bot's polling mechanism in a separate thread
+    # This is crucial for pyTelegramBotAPI to dispatch messages to handlers
+    print("INFO: Starting bot's infinity_polling in a separate thread...")
+    polling_thread = threading.Thread(target=bot.infinity_polling, daemon=True)
+    polling_thread.start()
+    print("INFO: Bot polling thread started.")
+
 # This part is only for running the Flask server locally for development.
 if __name__ == "__main__":
     print("INFO: Running in local development mode (Polling).")
     bot.remove_webhook()
     bot.polling(none_stop=True)
-    
