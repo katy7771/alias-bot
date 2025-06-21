@@ -3,7 +3,7 @@ import os
 import random
 import threading
 import time
-import flask
+import flask # Keep flask for now, though it might not be explicitly used if not serving HTTP
 from telebot import types
 from telebot.apihelper import ApiTelegramException
 from typing import Dict, List, Set, Optional, Any
@@ -17,12 +17,12 @@ if not TOKEN:
     raise ValueError("BOT_TOKEN is not set in Secrets")
 
 # In polling mode, WEBHOOK_URL is not used for receiving updates.
-# It can still be read if needed for something else, but it's not essential for core operation.
+# It can be used for initial webhook deletion if any was left active.
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL") # Keep for consistency, but won't be used for incoming updates
 WEBHOOK_PATH = f"/{TOKEN}"
 
 bot = telebot.TeleBot(TOKEN)
-app = flask.Flask(__name__) # Keep Flask app for potential health checks, but not for webhooks
+app = flask.Flask(__name__) # Keep Flask app for potential future health checks or minor web features, but not for webhooks
 print("INFO: Flask app and TeleBot instance created.")
 
 # (The rest of the global variables and core functions are unchanged)
@@ -196,7 +196,7 @@ def end_round(user_id: int, score: int):
         if is_circle_complete:
             current_turn_index = 0
             markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("🔄 Нове коло", callback_data="new_circle"), types.InlineKeyboardButton("🏁 Завершити гру", callback_data="finish_game"))
+            markup.add(types.InlineKeyboardButton("🔄 Нове коло", callback_data="new_circle"), types.Service.message(current_chat_id, "Круг завершено! Що робимо далі?", reply_markup=markup))
             try:
                 bot.send_message(current_chat_id, "Круг завершено! Що робимо далі?", reply_markup=markup)
             except ApiTelegramException as e:
@@ -505,56 +505,42 @@ def echo_all(message: types.Message):
 # === 3. Webhook Server & Startup Logic ===
 # ===================================================================
 
-@app.route(WEBHOOK_PATH, methods=['POST'])
-def webhook():
-    """Processes updates from Telegram."""
-    print("INFO: Webhook endpoint received a request.")
-    if flask.request.headers.get('content-type') == 'application/json':
-        json_string = flask.request.get_data().decode('utf-8')
-        try:
-            update = telebot.types.Update.de_json(json_string)
-            print(f"INFO: Received update from Telegram: {update.update_id}")
-            # Ensure the bot's dispatcher processes this update
-            bot.process_new_updates([update]) # This is the standard way for webhooks
-            print(f"INFO: Successfully processed update {update.update_id} and passed to handlers.")
-            return '', 200
-        except Exception as e:
-            print(f"CRITICAL ERROR: Failed to parse or process Telegram update in webhook: {e}")
-            print(traceback.format_exc())
-            return '', 500
-    else:
-        print(f"WARNING: Webhook received non-JSON request with content-type: {flask.request.headers.get('content-type')}")
-        flask.abort(403)
+# No @app.route(WEBHOOK_PATH) anymore if we switch to polling
+# Flask will run, but Gunicorn will just run the script.
+# The `webhook` function will not be used to receive updates from Telegram.
+# It might only be used for Render's health checks if configured.
 
 # This block runs once when Gunicorn starts the app.
-# It handles webhook setup for both Replit and other platforms like Render.
-# The 'if __name__ != "__main__":' condition ensures it runs when Gunicorn starts the Flask app.
-if __name__ != "__main__":
+# It handles initial setup including webhook deletion and then starts polling.
+if __name__ != "__main__": # This condition ensures it runs when Gunicorn starts the Flask app.
     print("INFO: Starting production mode initialization (Gunicorn).")
     if not TOKEN:
-        print("CRITICAL: BOT_TOKEN is not set. Cannot set webhook.")
-    elif WEBHOOK_URL:
-        print(f"INFO: Public WEBHOOK_URL found: {WEBHOOK_URL}")
-        print("INFO: Attempting to set webhook...")
-        try:
-            # IMPORTANT: Delete any existing webhook before setting a new one
-            # This avoids conflicts if the bot was previously in polling mode or had an old webhook.
-            bot.delete_webhook()
-            time.sleep(0.1) # Small delay to ensure Telegram processes the delete
+        print("CRITICAL: BOT_TOKEN is not set. Cannot start bot.")
+        # If token is not set, we cannot proceed, so exit
+        import sys
+        sys.exit(1)
+    
+    # Always try to delete webhook to ensure clean state before polling
+    try:
+        bot.delete_webhook()
+        time.sleep(0.1) # Small delay
+        print("INFO: Existing webhook deleted (if any).")
+    except Exception as e:
+        print(f"WARNING: Could not delete old webhook: {e}")
+        # Not a critical error if bot never had a webhook or Telegram API error
 
-            bot.set_webhook(url=WEBHOOK_URL + WEBHOOK_PATH)
-            print("SUCCESS: Webhook is set successfully! Bot is live and ready.")
-        except Exception as e:
-            print(f"CRITICAL ERROR: Failed to set webhook: {e}")
-            print("Please ensure WEBHOOK_URL is correct and accessible from Telegram.")
-            print(traceback.format_exc())
-    else:
-        print("WARNING: WEBHOOK_URL is not set. Webhook was not set.")
-        print("    Please ensure WEBHOOK_URL environment variable is configured on Render.")
-
-    # In a pure webhook setup, you do NOT run bot.polling() or bot.infinity_polling().
-    # The Flask app receives the webhook updates, and bot.process_new_updates() handles dispatching.
-    print("INFO: Bot operating in webhook mode, relying on Flask to receive updates.")
+    print("INFO: Bot operating in POLLING mode on Render. Webhooks are disabled.")
+    print("INFO: Starting bot's infinity_polling in the main thread (blocking for worker).")
+    
+    try:
+        # Run polling in the main thread. This will block the current thread.
+        # This is suitable for a Render "Worker" service type.
+        bot.polling(none_stop=True)
+    except Exception as e:
+        print(f"CRITICAL ERROR: Bot polling crashed: {e}")
+        print(traceback.format_exc())
+        import sys
+        sys.exit(1)
 
 # This part is only for running the Flask server locally for development.
 # When running locally, it will use polling, which is often easier for local testing.
