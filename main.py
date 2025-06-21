@@ -7,6 +7,7 @@ import flask
 from telebot import types
 from telebot.apihelper import ApiTelegramException
 from typing import Dict, List, Set, Optional, Any
+import traceback # Import traceback for detailed error logging
 
 # --- Bot and Global Variables Initialization ---
 print("INFO: Starting bot initialization...")
@@ -15,13 +16,13 @@ if not TOKEN:
     print("CRITICAL: BOT_TOKEN is not set in Secrets. Exiting.")
     raise ValueError("BOT_TOKEN is not set in Secrets")
 
-# In webhook mode, WEBHOOK_URL is where Telegram sends updates.
-# In polling mode, WEBHOOK_URL is not strictly needed for operation but can be useful for initial webhook setup removal.
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
-WEBHOOK_PATH = f"/{TOKEN}" # This path is what Telegram will send updates to.
+# In polling mode, WEBHOOK_URL is not used for receiving updates.
+# It can still be read if needed for something else, but it's not essential for core operation.
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL") # Keep for consistency, but won't be used for incoming updates
+WEBHOOK_PATH = f"/{TOKEN}"
 
 bot = telebot.TeleBot(TOKEN)
-app = flask.Flask(__name__)
+app = flask.Flask(__name__) # Keep Flask app for potential health checks, but not for webhooks
 print("INFO: Flask app and TeleBot instance created.")
 
 # (The rest of the global variables and core functions are unchanged)
@@ -389,7 +390,7 @@ def start_round_handler(message_or_call: types.Message | types.CallbackQuery):
         expected_team = teams_order[current_turn_index]
         game_active = True
         try:
-            bot.send_message(current_chat_id, f"🚀 Гра почалась! Першою ходить команда *{_get_team_display_name(expected_team)}*.")
+            bot.send_message(current_chat_id, f"🚀 Игра началась! Первой ходит команда *{_get_team_display_name(expected_team)}*.")
         except ApiTelegramException as e:
             print(f"ERROR: Could not send 'game started' message to {current_chat_id}: {e}")
     timer_msg = None
@@ -403,8 +404,8 @@ def start_round_handler(message_or_call: types.Message | types.CallbackQuery):
         username = user.username or user.first_name
         if player_team:
             display_player_team = _get_team_display_name(player_team)
-            bot.send_message(current_chat_id, f"Хід гравця @{username} з команди *{display_team_name}*! Повідомлення зі словом відправлено в особисті.", parse_mode="Markdown")
-        else: bot.send_message(current_chat_id, f"Хід гравця @{username}! Повідомлення зі словом відправлено в особисті.", parse_mode="Markdown")
+            bot.send_message(current_chat_id, f"Ход игрока @{username} из команды *{display_team_name}*! Сообщение со словом отправлено в личные сообщения.", parse_mode="Markdown")
+        else: bot.send_message(current_chat_id, f"Ход игрока @{username}! Сообщение со словом отправлено в личные сообщения.", parse_mode="Markdown")
         print(f"INFO: Notified chat about active player @{username}.")
     except Exception as e:
         print(f"ERROR: Failed to notify chat about active player: {e}")
@@ -514,12 +515,11 @@ def webhook():
             update = telebot.types.Update.de_json(json_string)
             print(f"INFO: Received update from Telegram: {update.update_id}")
             # Ensure the bot's dispatcher processes this update
-            bot.process_new_updates([update])
+            bot.process_new_updates([update]) # This is the standard way for webhooks
             print(f"INFO: Successfully processed update {update.update_id} and passed to handlers.")
             return '', 200
         except Exception as e:
-            print(f"CRITICAL ERROR: Failed to parse or process Telegram update: {e}")
-            import traceback
+            print(f"CRITICAL ERROR: Failed to parse or process Telegram update in webhook: {e}")
             print(traceback.format_exc())
             return '', 500
     else:
@@ -538,16 +538,15 @@ if __name__ != "__main__":
         print("INFO: Attempting to set webhook...")
         try:
             # IMPORTANT: Delete any existing webhook before setting a new one
-            # This avoids the Conflict: can't use getUpdates method while webhook is active error.
-            bot.delete_webhook() # This is crucial
-            time.sleep(0.1) # Small delay
+            # This avoids conflicts if the bot was previously in polling mode or had an old webhook.
+            bot.delete_webhook()
+            time.sleep(0.1) # Small delay to ensure Telegram processes the delete
 
             bot.set_webhook(url=WEBHOOK_URL + WEBHOOK_PATH)
             print("SUCCESS: Webhook is set successfully! Bot is live and ready.")
         except Exception as e:
             print(f"CRITICAL ERROR: Failed to set webhook: {e}")
             print("Please ensure WEBHOOK_URL is correct and accessible from Telegram.")
-            import traceback
             print(traceback.format_exc())
     else:
         print("WARNING: WEBHOOK_URL is not set. Webhook was not set.")
@@ -558,8 +557,8 @@ if __name__ != "__main__":
     print("INFO: Bot operating in webhook mode, relying on Flask to receive updates.")
 
 # This part is only for running the Flask server locally for development.
+# When running locally, it will use polling, which is often easier for local testing.
 if __name__ == "__main__":
     print("INFO: Running in local development mode (Polling).")
-    bot.remove_webhook()
+    bot.remove_webhook() # Ensure no webhook is active when polling locally
     bot.polling(none_stop=True)
-    
