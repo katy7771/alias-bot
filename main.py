@@ -64,7 +64,7 @@ def _create_word_buttons() -> types.InlineKeyboardMarkup:
     return markup
 def finish_game(chat_id: Optional[int] = None, silent: bool = False):
     print(f"INFO: Finishing game in chat {chat_id}, silent={silent}.")
-    global game_active, round_in_progress, active_player_id, teams, user_teams, teams_score, teams_order, played_teams, used_words, available_words, player_states, current_turn_index, group_timer_message_id, team_emojis
+    global game_active, round_in_progress, active_player_id, teams, user_teams, teams_score, teams_order, played_teams, used_words, available_words, player_states, current_turn_id, group_timer_message_id, team_emojis
     target_chat_id = chat_id or current_chat_id
     if active_player_id and active_player_id in player_states:
         player_states[active_player_id]["timer_active"] = False
@@ -538,8 +538,11 @@ if __name__ != "__main__":
         print(f"INFO: Public WEBHOOK_URL found: {WEBHOOK_URL}")
         print("INFO: Attempting to set webhook...")
         try:
-            bot.remove_webhook()
-            time.sleep(0.5) # Give some time for webhook to be removed
+            # IMPORTANT: Delete any existing webhook before setting a new one
+            # This avoids the Conflict: can't use getUpdates method while webhook is active error.
+            bot.delete_webhook() # This is crucial
+            time.sleep(0.1) # Small delay
+
             bot.set_webhook(url=WEBHOOK_URL + WEBHOOK_PATH)
             print("SUCCESS: Webhook is set successfully! Bot is live and ready.")
         except Exception as e:
@@ -551,15 +554,17 @@ if __name__ != "__main__":
         print("WARNING: WEBHOOK_URL is not set. Webhook was not set.")
         print("    Please ensure WEBHOOK_URL environment variable is configured on Render.")
 
-    # Start the bot's polling mechanism in a separate thread
-    # This is crucial for pyTelegramBotAPI to dispatch messages to handlers
-    print("INFO: Starting bot's infinity_polling in a separate thread...")
-    polling_thread = threading.Thread(target=bot.infinity_polling, daemon=True)
-    polling_thread.start()
-    print("INFO: Bot polling thread started.")
+    # IMPORTANT: Remove the infinity_polling thread.
+    # It conflicts with webhooks and causes the Error 409.
+    # The bot will now solely rely on webhook updates coming to the Flask app,
+    # and the bot.process_new_updates() call within the webhook function handles dispatching.
+    print("INFO: Starting bot's dispatcher for webhook updates...")
+    # No explicit bot.polling or bot.infinity_polling here for webhook mode
+    # The bot instance itself (loaded with handlers) will be used by process_new_updates
 
 # This part is only for running the Flask server locally for development.
 if __name__ == "__main__":
     print("INFO: Running in local development mode (Polling).")
     bot.remove_webhook()
     bot.polling(none_stop=True)
+    
