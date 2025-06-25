@@ -66,7 +66,7 @@ def finish_game(chat_id: Optional[int] = None, silent: bool = False):
         winner = max(teams_score, key=lambda k: teams_score[k])
         for team, score in teams_score.items():
             summary += f"{_get_team_display_name(team)}: *{score}* балів\n"
-        summary += f"\n🥇 Перемогла команда *{_get_team_display_name(winner)}*!\n"
+        summary += f"\n🥇 Перемогла команда *{_get_team_display_name(winner)}*!\n🎁 Бонус +30 хв отримують:\n"
         if teams.get(winner):
             for uid in teams[winner]:
                 try:
@@ -179,6 +179,27 @@ def start_round_for_player(user_id: int):
     send_word_to_player(user_id, is_initial=True)
     threading.Thread(target=update_timer_thread, args=(user_id, time.time())).start()
 
+# --- Helper to handle global commands during next_step_handler ---
+def handle_global_commands_in_step(message: types.Message) -> bool:
+    """Checks if a message received during a next_step_handler is a global command and processes it."""
+    if message.text and message.text.startswith('/'):
+        # Strip the bot username if it's present (e.g., /finish@your_bot)
+        command_text = message.text.split('@')[0]
+
+        if command_text == '/finish':
+            bot.send_message(message.chat.id, "🛑 Завершую гру за вашою командою!")
+            finish_game(message.chat.id)
+            return True # Indicates command was handled
+        elif command_text == '/start':
+            start(message)
+            return True
+        elif command_text == '/setup':
+            setup_command(message)
+            return True
+        # Add other global commands here if needed
+    return False # Indicates message was not a global command
+
+
 # (All handlers are unchanged)
 @bot.message_handler(commands=['setup'])
 def setup_command(message: types.Message):
@@ -186,7 +207,20 @@ def setup_command(message: types.Message):
     global current_chat_id; current_chat_id = message.chat.id
     msg = bot.send_message(message.chat.id, "Скільки команд буде грати? (введіть число)")
     bot.register_next_step_handler(msg, process_team_count)
+
+# --- NEW /finish command handler ---
+@bot.message_handler(commands=['finish'])
+def finish_command(message: types.Message):
+    """Handles the /finish command to stop the current game."""
+    bot.send_message(message.chat.id, "🛑 Завершую гру за вашою командою!")
+    finish_game(message.chat.id)
+
 def process_team_count(message: types.Message):
+    if handle_global_commands_in_step(message):
+        # If a global command was handled, clear the current step handler
+        bot.clear_step_handler_by_chat_id(chat_id=message.chat.id)
+        return
+
     try:
         if not message.text: raise ValueError("Input is not text")
         count = int(message.text)
@@ -194,8 +228,15 @@ def process_team_count(message: types.Message):
         msg = bot.send_message(message.chat.id, f"Введіть назву для Команди 1:")
         bot.register_next_step_handler(msg, process_team_name, 1, count, [])
     except (ValueError, TypeError):
-        msg = bot.send_message(message.chat.id, "Будь ласка, введіть число від 2 до 10."); bot.register_next_step_handler(msg, process_team_count)
+        msg = bot.send_message(message.chat.id, "Будь ласка, введіть число від 2 до 10.")
+        bot.register_next_step_handler(msg, process_team_count) # Re-register for valid input
+
 def process_team_name(message: types.Message, current_num: int, total_teams: int, collected_names: List[str]):
+    if handle_global_commands_in_step(message):
+        # If a global command was handled, clear the current step handler
+        bot.clear_step_handler_by_chat_id(chat_id=message.chat.id)
+        return
+
     if not message.text:
         msg = bot.send_message(message.chat.id, "Будь ласка, надішліть текстову назву для команди.")
         bot.register_next_step_handler(msg, process_team_name, current_num, total_teams, collected_names); return
@@ -205,7 +246,7 @@ def process_team_name(message: types.Message, current_num: int, total_teams: int
         bot.register_next_step_handler(msg, process_team_name, current_num, total_teams, collected_names); return
     collected_names.append(team_name)
     if current_num < total_teams:
-        msg = bot.send_message(message.chat.id, f"Дякую! Тепер введіть назву для Команди {current_num + 1}:")
+        msg = bot.send_message(message.chat.id, f"Дякую! Тепер введіть назву для Команди 1:")
         bot.register_next_step_handler(msg, process_team_name, current_num + 1, total_teams, collected_names)
     else:
         global teams, teams_score, teams_order, team_emojis
@@ -218,7 +259,7 @@ def start(message: types.Message):
     global current_chat_id; current_chat_id = message.chat.id
     if not teams:
         bot.send_message(message.chat.id, "Доброго дня! 👋\n\nЩоб почати грати, адміністратор чату має спершу налаштувати команди за допомогою команди /setup"); return
-    rules = ("👋 *Вітаємо в Alias! Гра налаштована, можна починати.*\n\n" "📌 *Правила гри:*\n" "1. Усі гравці мають приєднатись до своїх команд, натиснувши на кнопку нижче.\n" "2. Бот автоматично визначить, яка команда ходить першою.\n" "3. Коли настане черга вашої команди, один гравець має натиснути 'Почати гру' або 'Почати раунд'.\n" "4. **Тільки гравець з команди, чия черга, може почати раунд.**\n" f"5. У вас є {ROUND_TIME} секунд або {ROUND_LIMIT} слів, щоб пояснити якомога більше.\n" "6. Вгадане слово — це +1 бал для команди.\n\n" )
+    rules = ("👋 *Вітаємо в Alias! Гра налаштована, можна починати.*\n\n" "📌 *Правила гри:*\n" "1. Усі гравці мають приєднатись до своїх команд, натиснувши на кнопку нижче.\n" "2. Бот автоматично визначить, яка команда ходить першою.\n" "3. Коли настане черга вашої команди, один гравець має натиснути 'Почати гру' або 'Почати раунд'.\n" "4. **Тільки гравець з команди, чия черга, може почати раунд.**\n" f"5. У вас є {ROUND_TIME} секунд або {ROUND_LIMIT} слів, щоб пояснити якомога більше.\n" "6. Вгадане слово — це +1 бал для вашої команди.\n\n" "🏆 *Приз для переможців: кожен гравець команди-переможця отримує +30 хв до перерви!*")
     bot.send_message(current_chat_id, rules, parse_mode="Markdown")
     markup = types.InlineKeyboardMarkup()
     for name in teams_order:
@@ -346,19 +387,21 @@ def webhook():
     else:
         flask.abort(403)
 
-# This block runs once when Gunicorn starts the app on Railway
-if WEBHOOK_URL: # Simply check if WEBHOOK_URL is provided
-    print(f"✅ Public URL found in Secrets: {WEBHOOK_URL}")
-    print("⚙️  Setting webhook...")
+# This block runs once when Gunicorn starts the app on Replit
+if 'REPL_ID' in os.environ:
+    print("Replit environment detected...")
+    if WEBHOOK_URL:
+        print(f"✅ Public URL found in Secrets: {WEBHOOK_URL}")
+        print("⚙️  Setting webhook...")
 
-    bot.remove_webhook()
-    time.sleep(0.5)
-    bot.set_webhook(url=WEBHOOK_URL + WEBHOOK_PATH)
+        bot.remove_webhook()
+        time.sleep(0.5)
+        bot.set_webhook(url=WEBHOOK_URL + WEBHOOK_PATH)
 
-    print("🚀 Webhook is set successfully! Bot is live.")
-else:
-    print("⚠️ Could not find WEBHOOK_URL in Secrets. Webhook was not set.")
-    print("   Please set the WEBHOOK_URL environment variable.")
+        print("🚀 Webhook is set successfully! Bot is live.")
+    else:
+        print("⚠️ Could not find WEBHOOK_URL in Secrets. Webhook was not set.")
+        print("   Please go to the 'Secrets' tab and set the WEBHOOK_URL variable.")
 
 # This part is only for running the Flask server locally.
 if __name__ == "__main__":
