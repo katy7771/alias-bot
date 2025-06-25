@@ -246,7 +246,7 @@ def process_team_name(message: types.Message, current_num: int, total_teams: int
         bot.register_next_step_handler(msg, process_team_name, current_num, total_teams, collected_names); return
     collected_names.append(team_name)
     if current_num < total_teams:
-        msg = bot.send_message(message.chat.id, f"Дякую! Тепер введіть назву для Команди 1:")
+        msg = bot.send_message(message.chat.id, f"Дякую! Тепер введіть назву для Команди {current_num + 1}:")
         bot.register_next_step_handler(msg, process_team_name, current_num + 1, total_teams, collected_names)
     else:
         global teams, teams_score, teams_order, team_emojis
